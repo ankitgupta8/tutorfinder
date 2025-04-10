@@ -77,7 +77,9 @@ workflows:
           # Only run this if keystore is configured in environment variables
           if [ -n "$CM_KEYSTORE" ]; then
             echo $CM_KEYSTORE | base64 --decode > $CM_BUILD_DIR/android/app/keystore.jks
-            cat >> "$CM_BUILD_DIR/android/app/build.gradle" << 'EOF'
+            
+            # Create a temporary file with the new content
+            cat > /tmp/gradle_append.txt << GRADLEEOF
 android {
     signingConfigs {
         release {
@@ -93,7 +95,146 @@ android {
         }
     }
 }
-EOF
+GRADLEEOF
+            
+            # Append the content to build.gradle
+            cat /tmp/gradle_append.txt >> "$CM_BUILD_DIR/android/app/build.gradle"
+            
+          else
+            echo "No keystore found in environment variables. APK will be unsigned."
+          fi
+          
+      - name: Update Gradle wrapper
+        script: |
+          cd android
+          # Update Gradle if needed
+          touch gradle.properties
+          echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxPermSize=4096m" >> gradle.properties
+          echo "org.gradle.parallel=true" >> gradle.properties
+          echo "org.gradle.daemon=true" >> gradle.properties
+          
+      - name: Build Android release
+        script: |
+          cd android
+          ./gradlew assembleRelease --stacktrace
+          
+      - name: Generate build info
+        script: |
+          echo "Build completed on $(date)"
+          ls -la $CM_BUILD_DIR/android/app/build/outputs/apk/release || echo "No APK found"
+
+    artifacts:
+      - android/app/build/outputs/apk/release/*.apk
+      - android/app/build/outputs/**/mapping.txt
+
+    publishing:
+      email:
+        recipients:
+          - ankit.kapilvastu@gmail.com
+        notify:
+          success: true
+          failure: trueworkflows:
+  expo-react-native-android:
+    name: Expo React Native Android Build
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    environment:
+      node: 20.11.0
+      vars:
+        PACKAGE_NAME: "com.ankitgupta8.tutorfinder"
+      xcode: latest
+    scripts:
+      - name: Set up local properties
+        script: |
+          mkdir -p "$CM_BUILD_DIR/android"
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
+      
+      - name: Install dependencies with specific versions
+        script: |
+          # Force reinstall packages with the correct versions
+          npm install --legacy-peer-deps
+          npm install --save expo@~52.0.42 --legacy-peer-deps
+          npm install --save react-native@0.76.9 --legacy-peer-deps
+          npm install --save @react-native-async-storage/async-storage@1.23.1 --legacy-peer-deps
+
+      - name: Install required development tools
+        script: |
+          npm install -g eas-cli
+          npm install -g sharp-cli
+          npm install --save expo-system-ui --legacy-peer-deps
+          
+      - name: Clean project and cache
+        script: |
+          rm -rf node_modules/.cache
+          rm -rf $HOME/.npm/_cacache
+          watchman watch-del-all || true
+      
+      - name: Setup Metro configuration
+        script: |
+          if [ ! -f metro.config.js ]; then
+            echo "const { getDefaultConfig } = require('@expo/metro-config');" > metro.config.js
+            echo "module.exports = getDefaultConfig(__dirname);" >> metro.config.js
+          fi
+          
+          # Make sure app.json has correct configuration
+          if [ ! -f app.json ]; then
+            echo '{"expo": {"name": "TutorFinder", "slug": "tutorfinder"}}' > app.json
+          fi
+
+      - name: Run Expo Doctor to validate setup
+        script: |
+          npx expo doctor || true
+          
+      - name: Prebuild Android native code
+        script: |
+          # Create a basic eas.json if it doesn't exist
+          if [ ! -f eas.json ]; then
+            echo '{
+              "build": {
+                "development": {
+                  "developmentClient": true,
+                  "distribution": "internal"
+                },
+                "preview": {
+                  "distribution": "internal"
+                },
+                "production": {}
+              }
+            }' > eas.json
+          fi
+          
+          export CI=true
+          export EAS_NO_VCS=1
+          npx expo prebuild --platform android --clean
+
+      - name: Setup keystore for signing
+        script: |
+          # Only run this if keystore is configured in environment variables
+          if [ -n "$CM_KEYSTORE" ]; then
+            echo $CM_KEYSTORE | base64 --decode > $CM_BUILD_DIR/android/app/keystore.jks
+            
+            # Create a temporary file with the new content
+            cat > /tmp/gradle_append.txt << GRADLEEOF
+android {
+    signingConfigs {
+        release {
+            storeFile file("keystore.jks")
+            storePassword "$CM_KEYSTORE_PASSWORD"
+            keyAlias "$CM_KEY_ALIAS"
+            keyPassword "$CM_KEY_PASSWORD"
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
+    }
+}
+GRADLEEOF
+            
+            # Append the content to build.gradle
+            cat /tmp/gradle_append.txt >> "$CM_BUILD_DIR/android/app/build.gradle"
+            
           else
             echo "No keystore found in environment variables. APK will be unsigned."
           fi
