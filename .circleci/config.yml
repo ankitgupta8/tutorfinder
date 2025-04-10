@@ -1,27 +1,28 @@
 version: 2.1
 executors:
-  expo-executor:
+  android-executor:
     docker:
-      - image: circleci/node:18.20.5
+      - image: circleci/android:latest
     working_directory: ~/project
 jobs:
-  build-expo:
-    executor: expo-executor
+  build-apk:
+    executor: android-executor
     steps:
       - checkout
       - run:
-          name: Install Expo CLI
-          command: npm install -g expo-cli
+          name: Update SDK
+          command: sdkmanager --update
       - run:
-          name: Install Dependencies
-          command: npm install
+          name: Accept Licenses
+          command: yes | sdkmanager --licenses
       - run:
-          name: Build Expo App
-          command: expo build:android --non-interactive
+          name: Build APK
+          command: ./gradlew assembleRelease
       - store_artifacts:
-          path: dist
+          path: app/build/outputs/apk/release/app-release.apk
+          destination: app-release.apk
 workflows:
   version: 2
   build:
     jobs:
-      - build-expo
+      - build-apk
