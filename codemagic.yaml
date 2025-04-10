@@ -110,8 +110,4 @@ workflows:
         notify:
           success: true
           failure: true
-      scripts:
-        - name: Release to App Distribution
-          script: |
-            # This is where you would integrate with Firebase App Distribution, Play Store, or other distribution services
-            echo "APK ready for distribution"
+      
