@@ -7,6 +7,7 @@ workflows:
       node: 20.11.0
       vars:
         PACKAGE_NAME: "com.ankitgupta8.tutorfinder"
+        GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false"
       xcode: latest
       java: 17
     scripts:
@@ -38,6 +39,7 @@ workflows:
         script: |
           npm install -g eas-cli
           npm install -g sharp-cli
+          brew install watchman || true
           
       - name: Clean project and cache
         script: |
@@ -59,7 +61,7 @@ workflows:
 
       - name: Run Expo Doctor to validate setup
         script: |
-          npx expo doctor || true
+          npx expo-doctor || true
           
       - name: Prebuild Android native code
         script: |
@@ -160,16 +162,16 @@ workflows:
           # Add apply from line to end of app build.gradle
           echo "apply from: 'packaging-options.gradle'" >> app/build.gradle
           
-          # Update Gradle wrapper version to 8.0.2
+          # Update Gradle wrapper version to 7.5.1
           if [ -f gradle/wrapper/gradle-wrapper.properties ]; then
-            sed -i.bak -E 's/distributionUrl=.*/distributionUrl=https\\:\/\/services.gradle.org\/distributions\/gradle-8.0.2-all.zip/' gradle/wrapper/gradle-wrapper.properties || true
+            sed -i.bak -E 's/distributionUrl=.*/distributionUrl=https\\:\/\/services.gradle.org\/distributions\/gradle-7.5.1-all.zip/' gradle/wrapper/gradle-wrapper.properties || true
           fi
           
       - name: Build Android release with full debug output
         script: |
           cd android
           ./gradlew clean
-          ./gradlew --full-stacktrace --debug assembleRelease > ../gradle_full_debug.log 2>&1 || true
+          ./gradlew --stacktrace --info assembleRelease > ../gradle_full_debug.log 2>&1 || true
           
           # Print out the key error messages
           echo "===== GRADLE BUILD ERRORS ====="
