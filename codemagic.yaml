@@ -8,6 +8,7 @@ workflows:
       vars:
         PACKAGE_NAME: "com.ankitgupta8.tutorfinder"
       xcode: latest
+      java: 17 # Explicitly define Java version for React Native
     scripts:
       - name: Set up local properties
         script: |
@@ -16,17 +17,20 @@ workflows:
       
       - name: Install dependencies with specific versions
         script: |
-          # Force reinstall packages with the correct versions
-          npm install --legacy-peer-deps
-          npm install --save expo@~52.0.42 --legacy-peer-deps
-          npm install --save react-native@0.76.9 --legacy-peer-deps
-          npm install --save @react-native-async-storage/async-storage@1.23.1 --legacy-peer-deps
+          # Use yarn for more reliable dependency management
+          npm install -g yarn
+          
+          # Clean install with yarn
+          yarn install --frozen-lockfile
+          yarn add expo@~52.0.42
+          yarn add react-native@0.76.9
+          yarn add @react-native-async-storage/async-storage@1.23.1
+          yarn add expo-system-ui
 
       - name: Install required development tools
         script: |
           npm install -g eas-cli
           npm install -g sharp-cli
-          npm install --save expo-system-ui --legacy-peer-deps
           
       - name: Clean project and cache
         script: |
@@ -38,7 +42,8 @@ workflows:
         script: |
           if [ ! -f metro.config.js ]; then
             echo "const { getDefaultConfig } = require('@expo/metro-config');" > metro.config.js
-            echo "module.exports = getDefaultConfig(__dirname);" >> metro.config.js
+            echo "const config = getDefaultConfig(__dirname);" >> metro.config.js
+            echo "module.exports = config;" >> metro.config.js
           fi
           
           # Make sure app.json has correct configuration
@@ -78,22 +83,27 @@ workflows:
           if [ -n "$CM_KEYSTORE" ]; then
             echo $CM_KEYSTORE | base64 --decode > $CM_BUILD_DIR/android/app/keystore.jks
             
-            # Using echo commands instead of heredoc
-            echo 'android {' >> "$CM_BUILD_DIR/android/app/build.gradle"
-            echo '    signingConfigs {' >> "$CM_BUILD_DIR/android/app/build.gradle"
-            echo '        release {' >> "$CM_BUILD_DIR/android/app/build.gradle"
-            echo '            storeFile file("keystore.jks")' >> "$CM_BUILD_DIR/android/app/build.gradle"
-            echo '            storePassword "'$CM_KEYSTORE_PASSWORD'"' >> "$CM_BUILD_DIR/android/app/build.gradle"
-            echo '            keyAlias "'$CM_KEY_ALIAS'"' >> "$CM_BUILD_DIR/android/app/build.gradle"
-            echo '            keyPassword "'$CM_KEY_PASSWORD'"' >> "$CM_BUILD_DIR/android/app/build.gradle"
-            echo '        }' >> "$CM_BUILD_DIR/android/app/build.gradle"
-            echo '    }' >> "$CM_BUILD_DIR/android/app/build.gradle"
-            echo '    buildTypes {' >> "$CM_BUILD_DIR/android/app/build.gradle"
-            echo '        release {' >> "$CM_BUILD_DIR/android/app/build.gradle"
-            echo '            signingConfig signingConfigs.release' >> "$CM_BUILD_DIR/android/app/build.gradle"
-            echo '        }' >> "$CM_BUILD_DIR/android/app/build.gradle"
-            echo '    }' >> "$CM_BUILD_DIR/android/app/build.gradle"
-            echo '}' >> "$CM_BUILD_DIR/android/app/build.gradle"
+            # Create a separate file for signing config to avoid modifying build.gradle directly
+            cat << EOF > $CM_BUILD_DIR/android/app/signing-config.gradle
+android {
+    signingConfigs {
+        release {
+            storeFile file("keystore.jks")
+            storePassword "$CM_KEYSTORE_PASSWORD"
+            keyAlias "$CM_KEY_ALIAS"
+            keyPassword "$CM_KEY_PASSWORD"
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
+    }
+}
+EOF
+            
+            # Add apply from line to end of build.gradle
+            echo "apply from: 'signing-config.gradle'" >> "$CM_BUILD_DIR/android/app/build.gradle"
           else
             echo "No keystore found in environment variables. APK will be unsigned."
           fi
@@ -106,11 +116,23 @@ workflows:
           echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxPermSize=4096m" >> gradle.properties
           echo "org.gradle.parallel=true" >> gradle.properties
           echo "org.gradle.daemon=true" >> gradle.properties
+          echo "android.useAndroidX=true" >> gradle.properties
+          echo "android.enableJetifier=true" >> gradle.properties
+          
+      - name: Fix React Native Config 
+        script: |
+          # Make sure android/build.gradle has correct configuration
+          cd android
+          # Try applying the fix for React Native configurations
+          sed -i -e "s/minSdkVersion = .*/minSdkVersion = 21/" build.gradle || true
+          sed -i -e "s/compileSdkVersion = .*/compileSdkVersion = 34/" build.gradle || true
+          sed -i -e "s/targetSdkVersion = .*/targetSdkVersion = 33/" build.gradle || true
           
       - name: Build Android release
         script: |
           cd android
-          ./gradlew assembleRelease --stacktrace
+          ./gradlew clean
+          ./gradlew assembleRelease --stacktrace --info
           
       - name: Generate build info
         script: |
