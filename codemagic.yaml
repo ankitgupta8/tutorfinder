@@ -1,133 +1,117 @@
-# workflows:
-#   react-native-android:
-#     name: React Native Android
-#     max_build_duration: 120
-#     instance_type: mac_mini_m2
-#     environment:
-#       vars:
-#         PACKAGE_NAME: "com.guptaankit9.ankitproject"
-#     scripts:
-#       - name: Set Android SDK location
-#         script: |
-#           echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
-#       - name: Install npm dependencies
-#         script: |
-#           npm install
-#       - name: Install sharp-cli globally (specific version)
-#         script: |
-#           npm install -g sharp-cli@2.1.0
-#       - name: Install compatible expo-system-ui version
-#         script: |
-#           npm install expo-system-ui@3.0.0
-#       - name: Validate Expo project setup
-#         script: |
-#           npx expo-cli doctor || true
-#       - name: Run Expo Prebuild
-#         script: |
-#           npx expo prebuild --clean
-#       - name: Build Android release
-#         script: |
-#           cd android
-#           ./gradlew assembleRelease
-#     artifacts:
-#       - android/app/build/outputs/**/*.apk
-#     publishing:
-#       email:
-#         recipients:
-#           - user_1@example.com
-#           - user_2@example.com
-#         notify:
-#           success: true
-#           failure: false
-
-# workflows:
-#   react-native-android:
-#     name: React Native Android
-#     max_build_duration: 120
-#     instance_type: mac_mini_m2
-#     environment:
-#       vars:
-#         PACKAGE_NAME: "com.guptaankit9.ankitproject"
-#     scripts:
-#       - name: Set Android SDK location
-#         script: |
-#           echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
-#       - name: Install npm dependencies
-#         script: |
-#           npm install
-#       - name: Install sharp-cli globally (specific version)
-#         script: |
-#           npm install -g sharp-cli@2.1.0
-#       - name: Install compatible expo-system-ui version
-#         script: |
-#           npm install expo-system-ui@3.0.0
-#       - name: Validate Expo project setup
-#         script: |
-#           npx expo-cli doctor || true
-#       - name: Run Expo Prebuild
-#         script: |
-#           npx expo prebuild --clean
-#       - name: Build Android release
-#         script: |
-#           cd android
-#           ./gradlew assembleRelease
-#     artifacts:
-#       - android/app/build/outputs/**/*.apk
-#     publishing:
-#       email:
-#         recipients:
-#           - user_1@example.com
-#           - user_2@example.com
-#         notify:
-#           success: true
-#           failure: false
 workflows:
-  react-native-android:
-    name: React Native Android
+  expo-react-native-android:
+    name: Expo React Native Android Build
     max_build_duration: 120
     instance_type: mac_mini_m2
     environment:
+      node: 18.18.2
+      groups:
+        - keystore_credentials
       vars:
-        PACKAGE_NAME: "com.guptaankit9.ankitproject"
+        PACKAGE_NAME: "com.guptaankit9.ankitproject" # Replace with your app's package name
     scripts:
-      - name: Set Android SDK location
+      - name: Set up local properties
         script: |
+          mkdir -p "$CM_BUILD_DIR/android"
           echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
-      - name: Install npm dependencies
+      
+      - name: Install dependencies
         script: |
-          npm install expo-cli@6.3.0
           npm install
-      - name: Install sharp-cli globally
+
+      - name: Install Expo CLI
+        script: |
+          npm install -g expo-cli@latest
+
+      - name: Install additional dependencies
         script: |
           npm install -g sharp-cli
-      - name: Install compatible expo-system-ui version
+          npm install --save expo-system-ui
+
+      - name: Cache clearing
         script: |
-          npm install expo-system-ui@3.0.0
-      - name: Clear Metro Bundler Cache
-        script: |
-          npx expo start --clear
-      - name: Validate Metro Configuration
-        script: |
-          if [ ! -f metro.config.js ]; then
-            echo "module.exports = require('@expo/metro-config').getDefaultConfig(__dirname);" > metro.config.js
-          fi
-      - name: Validate Expo project setup
+          npx expo start --clear --non-interactive || true
+          watchman watch-del-all || true
+          rm -rf node_modules/.cache/babel-loader/
+
+      - name: Validate project setup
         script: |
           npx expo doctor || true
+          
+          # Create or validate metro.config.js
+          if [ ! -f metro.config.js ]; then
+            echo "Creating default metro.config.js"
+            echo "const { getDefaultConfig } = require('@expo/metro-config');" > metro.config.js
+            echo "module.exports = getDefaultConfig(__dirname);" >> metro.config.js
+          fi
+
       - name: Run Expo Prebuild
         script: |
-          npx expo prebuild
+          # Ensure eas.json exists with minimum configuration
+          if [ ! -f eas.json ]; then
+            echo "Creating basic eas.json config"
+            echo '{
+              "build": {
+                "development": {
+                  "developmentClient": true,
+                  "distribution": "internal"
+                },
+                "preview": {
+                  "distribution": "internal"
+                },
+                "production": {}
+              }
+            }' > eas.json
+          fi
+
+          # Run prebuild with clean flag to generate native projects
+          npx expo prebuild --platform android --clean
+
+      - name: Setup keystore
+        script: |
+          echo $CM_KEYSTORE | base64 --decode > $CM_BUILD_DIR/android/app/keystore.jks
+          cat >> "$CM_BUILD_DIR/android/app/build.gradle" << EOF
+          android {
+              signingConfigs {
+                  release {
+                      storeFile file("keystore.jks")
+                      storePassword "$CM_KEYSTORE_PASSWORD"
+                      keyAlias "$CM_KEY_ALIAS"
+                      keyPassword "$CM_KEY_PASSWORD"
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                  }
+              }
+          }
+          EOF
+          
       - name: Build Android release
         script: |
           cd android
           ./gradlew assembleRelease
+          
+      - name: Generate build info
+        script: |
+          echo "Build completed on $(date)"
+          echo "App version: $(grep -o 'versionName ".*"' $CM_BUILD_DIR/android/app/build.gradle | cut -d'"' -f2)"
+          echo "APK location: $(find $CM_BUILD_DIR/android/app/build/outputs -name "*.apk" | head -n 1)"
+
     artifacts:
       - android/app/build/outputs/**/*.apk
+      - android/app/build/outputs/**/mapping.txt
+
     publishing:
       email:
         recipients:
-          - user_1@example.com
-          - user_2@example.com
+          - developer@example.com
         notify:
           success: true
-          failure: false
+          failure: true
+      scripts:
+        - name: Release to App Distribution
+          script: |
+            # This is where you would integrate with Firebase App Distribution, Play Store, or other distribution services
+            echo "APK ready for distribution"
