@@ -10,6 +10,14 @@ workflows:
       xcode: latest
       java: 17
     scripts:
+      - name: Pre-build cleanup
+        script: |
+          rm -rf node_modules
+          rm -rf android/build
+          rm -rf android/app/build
+          rm -f package-lock.json
+          rm -f yarn.lock
+      
       - name: Set up local properties
         script: |
           mkdir -p "$CM_BUILD_DIR/android"
@@ -17,18 +25,14 @@ workflows:
       
       - name: Install dependencies with specific versions
         script: |
-          # Remove package-lock.json to avoid conflicts
-          rm -f package-lock.json
-          
-          # Use npm with --force and --legacy-peer-deps to bypass version constraints
-          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+          npm install --legacy-peer-deps
           npm install --save expo@~52.0.42 --legacy-peer-deps
           npm install --save react-native@0.76.9 --legacy-peer-deps
           npm install --save @react-native-async-storage/async-storage@1.23.1 --legacy-peer-deps
           npm install --save expo-system-ui --legacy-peer-deps
           
-          # Handle cloudinary incompatibility specifically
-          npm install --save cloudinary-react-native --ignore-engines --legacy-peer-deps || echo "Skipped cloudinary-react-native installation due to Node version incompatibility"
+          # Install cloudinary with ignore-engines flag
+          npm install --save cloudinary-react-native --ignore-engines --legacy-peer-deps || echo "Skipping cloudinary-react-native"
 
       - name: Install required development tools
         script: |
@@ -106,28 +110,77 @@ workflows:
             echo "No keystore found in environment variables. APK will be unsigned."
           fi
           
-      - name: Update Gradle wrapper
+      - name: Update Gradle configuration
         script: |
           cd android
+          
+          # Update gradle.properties
           touch gradle.properties
           echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxPermSize=4096m" >> gradle.properties
           echo "org.gradle.parallel=true" >> gradle.properties
           echo "org.gradle.daemon=true" >> gradle.properties
           echo "android.useAndroidX=true" >> gradle.properties
           echo "android.enableJetifier=true" >> gradle.properties
+          echo "org.gradle.configureondemand=true" >> gradle.properties
+          echo "kotlin.code.style=official" >> gradle.properties
           
-      - name: Fix React Native Config 
-        script: |
-          cd android
-          sed -i -e "s/minSdkVersion = .*/minSdkVersion = 21/" build.gradle || true
-          sed -i -e "s/compileSdkVersion = .*/compileSdkVersion = 34/" build.gradle || true
-          sed -i -e "s/targetSdkVersion = .*/targetSdkVersion = 33/" build.gradle || true
+          # Update build.gradle to fix common Android issues
+          if [ -f build.gradle ]; then
+            # Fix version issues in root build.gradle
+            sed -i.bak -E 's/ext.kotlin_version = .*/ext.kotlin_version = "1.7.0"/' build.gradle || true
+            sed -i.bak -E 's/classpath\("com.android.tools.build:gradle:.*"\)/classpath("com.android.tools.build:gradle:7.4.2")/' build.gradle || true
+            sed -i.bak -E 's/classpath\("org.jetbrains.kotlin:kotlin-gradle-plugin:.*"\)/classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.7.0")/' build.gradle || true
+            
+            # Ensure we're using the correct NDK version
+            sed -i.bak -E 's/ndkVersion .*/ndkVersion "25.1.8937393"/' build.gradle || true
+          fi
           
-      - name: Build Android release
+          # Fix versions in app/build.gradle
+          if [ -f app/build.gradle ]; then
+            sed -i.bak -E 's/compileSdkVersion .*/compileSdkVersion 33/' app/build.gradle || true
+            sed -i.bak -E 's/targetSdkVersion .*/targetSdkVersion 33/' app/build.gradle || true
+            sed -i.bak -E 's/minSdkVersion .*/minSdkVersion 21/' app/build.gradle || true
+            
+            # Add packagingOptions if not present
+            if ! grep -q "packagingOptions" app/build.gradle; then
+              cat << 'EOF' >> app/build.gradle
+
+android {
+    packagingOptions {
+        pickFirst '**/*.so'
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/license.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/NOTICE.txt'
+        exclude 'META-INF/notice.txt'
+        exclude 'META-INF/ASL2.0'
+    }
+}
+EOF
+            fi
+          fi
+          
+          # Update Gradle wrapper version
+          if [ -f gradle/wrapper/gradle-wrapper.properties ]; then
+            sed -i.bak -E 's/distributionUrl=.*/distributionUrl=https\\:\/\/services.gradle.org\/distributions\/gradle-7.5.1-all.zip/' gradle/wrapper/gradle-wrapper.properties || true
+          fi
+          
+      - name: Build Android release with full debug output
         script: |
           cd android
           ./gradlew clean
-          ./gradlew assembleRelease --stacktrace --info
+          ./gradlew --full-stacktrace --debug assembleRelease > ../gradle_full_debug.log 2>&1 || true
+          
+          # Print out the key error messages
+          echo "===== GRADLE BUILD ERRORS ====="
+          cat ../gradle_full_debug.log | grep -A 20 "FAILURE" || echo "No specific FAILURE message found"
+          cat ../gradle_full_debug.log | grep -A 10 -B 10 "error:" || echo "No specific error: messages found"
+          cat ../gradle_full_debug.log | grep -A 5 -B 5 "Exception" || echo "No specific Exception messages found"
+          
+          # Try build again with regular output for cleaner logs
+          ./gradlew assembleRelease
           
       - name: Generate build info
         script: |
@@ -137,6 +190,7 @@ workflows:
     artifacts:
       - android/app/build/outputs/apk/release/*.apk
       - android/app/build/outputs/**/mapping.txt
+      - gradle_full_debug.log
 
     publishing:
       email:
