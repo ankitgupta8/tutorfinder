@@ -140,27 +140,25 @@ workflows:
             sed -i.bak -E 's/compileSdkVersion .*/compileSdkVersion 33/' app/build.gradle || true
             sed -i.bak -E 's/targetSdkVersion .*/targetSdkVersion 33/' app/build.gradle || true
             sed -i.bak -E 's/minSdkVersion .*/minSdkVersion 21/' app/build.gradle || true
-            
-            # Add packagingOptions if not present
-            if ! grep -q "packagingOptions" app/build.gradle; then
-              cat << 'EOF' >> app/build.gradle
-
-android {
-    packagingOptions {
-        pickFirst '**/*.so'
-        exclude 'META-INF/DEPENDENCIES'
-        exclude 'META-INF/LICENSE'
-        exclude 'META-INF/LICENSE.txt'
-        exclude 'META-INF/license.txt'
-        exclude 'META-INF/NOTICE'
-        exclude 'META-INF/NOTICE.txt'
-        exclude 'META-INF/notice.txt'
-        exclude 'META-INF/ASL2.0'
-    }
-}
-EOF
-            fi
           fi
+          
+          # Create a separate file for packaging options
+          echo "android {" > app/packaging-options.gradle
+          echo "    packagingOptions {" >> app/packaging-options.gradle
+          echo "        pickFirst '**/*.so'" >> app/packaging-options.gradle
+          echo "        exclude 'META-INF/DEPENDENCIES'" >> app/packaging-options.gradle
+          echo "        exclude 'META-INF/LICENSE'" >> app/packaging-options.gradle
+          echo "        exclude 'META-INF/LICENSE.txt'" >> app/packaging-options.gradle
+          echo "        exclude 'META-INF/license.txt'" >> app/packaging-options.gradle
+          echo "        exclude 'META-INF/NOTICE'" >> app/packaging-options.gradle
+          echo "        exclude 'META-INF/NOTICE.txt'" >> app/packaging-options.gradle
+          echo "        exclude 'META-INF/notice.txt'" >> app/packaging-options.gradle
+          echo "        exclude 'META-INF/ASL2.0'" >> app/packaging-options.gradle
+          echo "    }" >> app/packaging-options.gradle
+          echo "}" >> app/packaging-options.gradle
+          
+          # Add apply from line to end of app build.gradle
+          echo "apply from: 'packaging-options.gradle'" >> app/build.gradle
           
           # Update Gradle wrapper version
           if [ -f gradle/wrapper/gradle-wrapper.properties ]; then
