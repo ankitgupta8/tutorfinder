@@ -1,7 +1,7 @@
 workflows:
   expo-react-native-android:
     name: Expo React Native Android Build
-    max_build_duration: 180
+    max_build_duration: 120  # Fixed to maximum allowed value of 120 minutes
     instance_type: mac_mini_m2
     environment:
       node: 20.11.0  # Using Node 20+ to avoid engine compatibility issues
