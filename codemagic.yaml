@@ -160,9 +160,9 @@ workflows:
           # Add apply from line to end of app build.gradle
           echo "apply from: 'packaging-options.gradle'" >> app/build.gradle
           
-          # Update Gradle wrapper version
+          # Update Gradle wrapper version to 8.0.2
           if [ -f gradle/wrapper/gradle-wrapper.properties ]; then
-            sed -i.bak -E 's/distributionUrl=.*/distributionUrl=https\\:\/\/services.gradle.org\/distributions\/gradle-7.5.1-all.zip/' gradle/wrapper/gradle-wrapper.properties || true
+            sed -i.bak -E 's/distributionUrl=.*/distributionUrl=https\\:\/\/services.gradle.org\/distributions\/gradle-8.0.2-all.zip/' gradle/wrapper/gradle-wrapper.properties || true
           fi
           
       - name: Build Android release with full debug output
