@@ -1,55 +1,59 @@
 workflows:
   expo-react-native-android:
     name: Expo React Native Android Build
-    max_build_duration: 120
+    max_build_duration: 180
     instance_type: mac_mini_m2
     environment:
-      node: 18.18.2
-      groups:
-        - keystore_credentials
+      node: 20.11.0  # Using Node 20+ to avoid engine compatibility issues
       vars:
-        PACKAGE_NAME: "com.guptaankit9.ankitproject" # Replace with your app's package name
+        PACKAGE_NAME: "com.ankitgupta8.tutorfinder"
+      xcode: latest
     scripts:
       - name: Set up local properties
         script: |
           mkdir -p "$CM_BUILD_DIR/android"
           echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
       
-      - name: Install dependencies
+      - name: Install dependencies with specific versions
         script: |
-          npm install
+          # Force reinstall packages with the correct versions
+          npm install --legacy-peer-deps
+          npm install --save expo@~52.0.42 --legacy-peer-deps
+          npm install --save react-native@0.76.9 --legacy-peer-deps
+          npm install --save @react-native-async-storage/async-storage@1.23.1 --legacy-peer-deps
 
-      - name: Install Expo CLI
+      - name: Install required development tools
         script: |
-          npm install -g expo-cli@latest
-
-      - name: Install additional dependencies
-        script: |
+          npm install -g eas-cli
           npm install -g sharp-cli
-          npm install --save expo-system-ui
-
-      - name: Cache clearing
-        script: |
-          npx expo start --clear --non-interactive || true
-          watchman watch-del-all || true
-          rm -rf node_modules/.cache/babel-loader/
-
-      - name: Validate project setup
-        script: |
-          npx expo doctor || true
+          npm install --save expo-system-ui --legacy-peer-deps
           
-          # Create or validate metro.config.js
+      - name: Clean project and cache
+        script: |
+          rm -rf node_modules/.cache
+          rm -rf $HOME/.npm/_cacache
+          watchman watch-del-all || true
+      
+      - name: Setup Metro configuration
+        script: |
           if [ ! -f metro.config.js ]; then
-            echo "Creating default metro.config.js"
             echo "const { getDefaultConfig } = require('@expo/metro-config');" > metro.config.js
             echo "module.exports = getDefaultConfig(__dirname);" >> metro.config.js
           fi
+          
+          # Make sure app.json has correct configuration
+          if [ ! -f app.json ]; then
+            echo '{"expo": {"name": "TutorFinder", "slug": "tutorfinder"}}' > app.json
+          fi
 
-      - name: Run Expo Prebuild
+      - name: Run Expo Doctor to validate setup
         script: |
-          # Ensure eas.json exists with minimum configuration
+          npx expo doctor || true
+          
+      - name: Prebuild Android native code
+        script: |
+          # Create a basic eas.json if it doesn't exist
           if [ ! -f eas.json ]; then
-            echo "Creating basic eas.json config"
             echo '{
               "build": {
                 "development": {
@@ -63,51 +67,64 @@ workflows:
               }
             }' > eas.json
           fi
-
-          # Run prebuild with clean flag to generate native projects
+          
+          export CI=true
+          export EAS_NO_VCS=1
           npx expo prebuild --platform android --clean
 
-      - name: Setup keystore
+      - name: Setup keystore for signing
         script: |
-          echo $CM_KEYSTORE | base64 --decode > $CM_BUILD_DIR/android/app/keystore.jks
-          cat >> "$CM_BUILD_DIR/android/app/build.gradle" << EOF
-          android {
-              signingConfigs {
-                  release {
-                      storeFile file("keystore.jks")
-                      storePassword "$CM_KEYSTORE_PASSWORD"
-                      keyAlias "$CM_KEY_ALIAS"
-                      keyPassword "$CM_KEY_PASSWORD"
-                  }
-              }
-              buildTypes {
-                  release {
-                      signingConfig signingConfigs.release
-                  }
-              }
-          }
-          EOF
+          # Only run this if keystore is configured in environment variables
+          if [ -n "$CM_KEYSTORE" ]; then
+            echo $CM_KEYSTORE | base64 --decode > $CM_BUILD_DIR/android/app/keystore.jks
+            cat >> "$CM_BUILD_DIR/android/app/build.gradle" << EOF
+            android {
+                signingConfigs {
+                    release {
+                        storeFile file("keystore.jks")
+                        storePassword "$CM_KEYSTORE_PASSWORD"
+                        keyAlias "$CM_KEY_ALIAS"
+                        keyPassword "$CM_KEY_PASSWORD"
+                    }
+                }
+                buildTypes {
+                    release {
+                        signingConfig signingConfigs.release
+                    }
+                }
+            }
+            EOF
+          else
+            echo "No keystore found in environment variables. APK will be unsigned."
+          fi
+          
+      - name: Update Gradle wrapper
+        script: |
+          cd android
+          # Update Gradle if needed
+          touch gradle.properties
+          echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxPermSize=4096m" >> gradle.properties
+          echo "org.gradle.parallel=true" >> gradle.properties
+          echo "org.gradle.daemon=true" >> gradle.properties
           
       - name: Build Android release
         script: |
           cd android
-          ./gradlew assembleRelease
+          ./gradlew assembleRelease --stacktrace
           
       - name: Generate build info
         script: |
           echo "Build completed on $(date)"
-          echo "App version: $(grep -o 'versionName ".*"' $CM_BUILD_DIR/android/app/build.gradle | cut -d'"' -f2)"
-          echo "APK location: $(find $CM_BUILD_DIR/android/app/build/outputs -name "*.apk" | head -n 1)"
+          ls -la $CM_BUILD_DIR/android/app/build/outputs/apk/release || echo "No APK found"
 
     artifacts:
-      - android/app/build/outputs/**/*.apk
+      - android/app/build/outputs/apk/release/*.apk
       - android/app/build/outputs/**/mapping.txt
 
     publishing:
       email:
         recipients:
-          - developer@example.com
+          - ankit.kapilvastu@gmail.com
         notify:
           success: true
           failure: true
-      
