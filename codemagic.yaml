@@ -9,6 +9,8 @@ workflows:
     scripts:
       - name: Set Android SDK location
         script: |
+          # Ensure the android directory exists before writing the local.properties file
+          mkdir -p "$CM_BUILD_DIR/android"
           echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
       - name: Install npm dependencies
         script: |
@@ -37,7 +39,7 @@ workflows:
       - name: Update Gradle version to 7.6
         script: |
           echo "Updating gradle-wrapper.properties to use Gradle 7.6..."
-          # The following sed command replaces the distributionUrl line to use Gradle 7.6 (assumes your file contains '-bin.zip')
+          # Replace any distributionUrl line pointing to a Gradle version with one that points to Gradle 7.6
           sed -i '' 's|distributionUrl=.*gradle-[0-9]*\.[0-9]*\.[0-9]*-bin.zip|distributionUrl=https://services.gradle.org/distributions/gradle-7.6-bin.zip|g' android/gradle/wrapper/gradle-wrapper.properties
           echo "Updated gradle-wrapper.properties:"
           cat android/gradle/wrapper/gradle-wrapper.properties
