@@ -17,12 +17,18 @@ workflows:
       
       - name: Install dependencies with specific versions
         script: |
-          npm install -g yarn
-          yarn install --frozen-lockfile
-          yarn add expo@~52.0.42
-          yarn add react-native@0.76.9
-          yarn add @react-native-async-storage/async-storage@1.23.1
-          yarn add expo-system-ui
+          # Remove package-lock.json to avoid conflicts
+          rm -f package-lock.json
+          
+          # Use npm with --force and --legacy-peer-deps to bypass version constraints
+          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+          npm install --save expo@~52.0.42 --legacy-peer-deps
+          npm install --save react-native@0.76.9 --legacy-peer-deps
+          npm install --save @react-native-async-storage/async-storage@1.23.1 --legacy-peer-deps
+          npm install --save expo-system-ui --legacy-peer-deps
+          
+          # Handle cloudinary incompatibility specifically
+          npm install --save cloudinary-react-native --ignore-engines --legacy-peer-deps || echo "Skipped cloudinary-react-native installation due to Node version incompatibility"
 
       - name: Install required development tools
         script: |
