@@ -8,7 +8,7 @@ workflows:
       vars:
         PACKAGE_NAME: "com.ankitgupta8.tutorfinder"
       xcode: latest
-      java: 17 # Explicitly define Java version for React Native
+      java: 17
     scripts:
       - name: Set up local properties
         script: |
@@ -17,10 +17,7 @@ workflows:
       
       - name: Install dependencies with specific versions
         script: |
-          # Use yarn for more reliable dependency management
           npm install -g yarn
-          
-          # Clean install with yarn
           yarn install --frozen-lockfile
           yarn add expo@~52.0.42
           yarn add react-native@0.76.9
@@ -46,7 +43,6 @@ workflows:
             echo "module.exports = config;" >> metro.config.js
           fi
           
-          # Make sure app.json has correct configuration
           if [ ! -f app.json ]; then
             echo '{"expo": {"name": "TutorFinder", "slug": "tutorfinder"}}' > app.json
           fi
@@ -57,7 +53,6 @@ workflows:
           
       - name: Prebuild Android native code
         script: |
-          # Create a basic eas.json if it doesn't exist
           if [ ! -f eas.json ]; then
             echo '{
               "build": {
@@ -79,28 +74,25 @@ workflows:
 
       - name: Setup keystore for signing
         script: |
-          # Only run this if keystore is configured in environment variables
           if [ -n "$CM_KEYSTORE" ]; then
             echo $CM_KEYSTORE | base64 --decode > $CM_BUILD_DIR/android/app/keystore.jks
             
-            # Create a separate file for signing config to avoid modifying build.gradle directly
-            cat << EOF > $CM_BUILD_DIR/android/app/signing-config.gradle
-android {
-    signingConfigs {
-        release {
-            storeFile file("keystore.jks")
-            storePassword "$CM_KEYSTORE_PASSWORD"
-            keyAlias "$CM_KEY_ALIAS"
-            keyPassword "$CM_KEY_PASSWORD"
-        }
-    }
-    buildTypes {
-        release {
-            signingConfig signingConfigs.release
-        }
-    }
-}
-EOF
+            # Create a separate file for signing config
+            echo "android {" > $CM_BUILD_DIR/android/app/signing-config.gradle
+            echo "    signingConfigs {" >> $CM_BUILD_DIR/android/app/signing-config.gradle
+            echo "        release {" >> $CM_BUILD_DIR/android/app/signing-config.gradle
+            echo "            storeFile file(\"keystore.jks\")" >> $CM_BUILD_DIR/android/app/signing-config.gradle
+            echo "            storePassword \"$CM_KEYSTORE_PASSWORD\"" >> $CM_BUILD_DIR/android/app/signing-config.gradle
+            echo "            keyAlias \"$CM_KEY_ALIAS\"" >> $CM_BUILD_DIR/android/app/signing-config.gradle
+            echo "            keyPassword \"$CM_KEY_PASSWORD\"" >> $CM_BUILD_DIR/android/app/signing-config.gradle
+            echo "        }" >> $CM_BUILD_DIR/android/app/signing-config.gradle
+            echo "    }" >> $CM_BUILD_DIR/android/app/signing-config.gradle
+            echo "    buildTypes {" >> $CM_BUILD_DIR/android/app/signing-config.gradle
+            echo "        release {" >> $CM_BUILD_DIR/android/app/signing-config.gradle
+            echo "            signingConfig signingConfigs.release" >> $CM_BUILD_DIR/android/app/signing-config.gradle
+            echo "        }" >> $CM_BUILD_DIR/android/app/signing-config.gradle
+            echo "    }" >> $CM_BUILD_DIR/android/app/signing-config.gradle
+            echo "}" >> $CM_BUILD_DIR/android/app/signing-config.gradle
             
             # Add apply from line to end of build.gradle
             echo "apply from: 'signing-config.gradle'" >> "$CM_BUILD_DIR/android/app/build.gradle"
@@ -111,7 +103,6 @@ EOF
       - name: Update Gradle wrapper
         script: |
           cd android
-          # Update Gradle if needed
           touch gradle.properties
           echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxPermSize=4096m" >> gradle.properties
           echo "org.gradle.parallel=true" >> gradle.properties
@@ -121,9 +112,7 @@ EOF
           
       - name: Fix React Native Config 
         script: |
-          # Make sure android/build.gradle has correct configuration
           cd android
-          # Try applying the fix for React Native configurations
           sed -i -e "s/minSdkVersion = .*/minSdkVersion = 21/" build.gradle || true
           sed -i -e "s/compileSdkVersion = .*/compileSdkVersion = 34/" build.gradle || true
           sed -i -e "s/targetSdkVersion = .*/targetSdkVersion = 33/" build.gradle || true
