@@ -9,7 +9,7 @@ workflows:
     scripts:
       - name: Set Android SDK location
         script: |
-          # Ensure the android directory exists before writing the local.properties file
+          # Ensure the android folder exists; otherwise, writing local.properties will fail.
           mkdir -p "$CM_BUILD_DIR/android"
           echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
       - name: Install npm dependencies
@@ -22,6 +22,9 @@ workflows:
       - name: Install compatible expo-system-ui version
         script: |
           npm install expo-system-ui@3.0.0
+      - name: Clear Metro Bundler Cache
+        script: |
+          npx expo start --clear || true
       - name: Validate Metro Configuration
         script: |
           if [ ! -f metro.config.js ]; then
@@ -33,10 +36,23 @@ workflows:
       - name: Run Expo Prebuild
         script: |
           npx expo prebuild
+      - name: Patch expo-application Gradle file
+        script: |
+          echo "Patching node_modules/expo-application/android/build.gradle..."
+          # Remove the line that sets the classifier property (this fixes the unknown property error)
+          sed -i '' '/androidSourcesJar\.classifier/d' node_modules/expo-application/android/build.gradle
+          echo "Patch complete. Showing changed file content:"
+          cat node_modules/expo-application/android/build.gradle
+      - name: Patch expo-modules-core Gradle file
+        script: |
+          echo "Patching node_modules/expo-modules-core/android/ExpoModulesCorePlugin.gradle..."
+          # Comment out lines referencing 'components.release' to bypass the unknown property error
+          sed -i '' 's/^\(.*components\.release.*\)$/\/\/\1/' node_modules/expo-modules-core/android/ExpoModulesCorePlugin.gradle
+          echo "Patch complete. Showing changed file content (first 120 lines):"
+          head -n 120 node_modules/expo-modules-core/android/ExpoModulesCorePlugin.gradle
       - name: Update Gradle version to 7.6
         script: |
           echo "Updating gradle-wrapper.properties to use Gradle 7.6..."
-          # Replace any distributionUrl line pointing to a Gradle version with one that points to Gradle 7.6
           sed -i '' 's|distributionUrl=.*gradle-[0-9]*\.[0-9]*\.[0-9]*-bin.zip|distributionUrl=https://services.gradle.org/distributions/gradle-7.6-bin.zip|g' android/gradle/wrapper/gradle-wrapper.properties
           echo "Updated gradle-wrapper.properties:"
           cat android/gradle/wrapper/gradle-wrapper.properties
